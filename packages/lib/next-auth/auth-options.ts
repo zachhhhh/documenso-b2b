@@ -205,6 +205,63 @@ export const NEXT_AUTH_OPTIONS: AuthOptions = {
         };
       },
     },
+    {
+      id: 'saml',
+      name: 'Enterprise SAML',
+      type: 'oauth',
+      wellKnown: process.env.SAML_WELL_KNOWN,
+      authorization: { params: { scope: 'openid email profile' } },
+      idToken: true,
+      checks: ['pkce', 'state'],
+      clientId: process.env.SAML_CLIENT_ID,
+      clientSecret: process.env.SAML_CLIENT_SECRET,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        };
+      },
+    } as any,
+    {
+      id: 'azure-ad',
+      name: 'Microsoft Azure AD',
+      type: 'oauth',
+      wellKnown: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0/.well-known/openid-configuration`,
+      authorization: { params: { scope: 'openid email profile User.Read' } },
+      idToken: true,
+      checks: ['pkce', 'state'],
+      clientId: process.env.AZURE_AD_CLIENT_ID,
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        };
+      },
+    } as any,
+    {
+      id: 'okta',
+      name: 'Okta SSO',
+      type: 'oauth',
+      wellKnown: `https://${process.env.OKTA_DOMAIN}/.well-known/openid-configuration`,
+      authorization: { params: { scope: 'openid email profile' } },
+      idToken: true,
+      checks: ['pkce', 'state'],
+      clientId: process.env.OKTA_CLIENT_ID,
+      clientSecret: process.env.OKTA_CLIENT_SECRET,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        };
+      },
+    } as any,
     CredentialsProvider({
       id: 'webauthn',
       name: 'Keypass',

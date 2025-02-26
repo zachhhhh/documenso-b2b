@@ -73,6 +73,8 @@ model User {
   siteSettings       SiteSettings[]
   passkeys           Passkey[]
   avatarImage        AvatarImage?           @relation(fields: [avatarImageId], references: [id], onDelete: SetNull)
+  dynamicForms       DynamicForm[]
+  industryTemplates  IndustryTemplate[]
 
   @@index([email])
 }
@@ -335,6 +337,8 @@ model Document {
   templateId     Int?
   template       Template?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
   source         DocumentSource
+  formSubmission FormSubmission?
+  analyses      DocumentAnalysis[]
 
   auditLogs DocumentAuditLog[]
 
@@ -344,20 +348,23 @@ model Document {
 }
 
 model DocumentAuditLog {
-  id         String   @id @default(cuid())
-  documentId Int
-  createdAt  DateTime @default(now())
-  type       String
-  data       Json
+  id          Int       @id @default(autoincrement())
+  documentId  Int
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId      Int?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  recipientId Int?
+  recipient   Recipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+  type        String
+  data        String?
+  createdAt   DateTime  @default(now())
+  ip          String?   // IP address of the user/recipient
+  userAgent   String?   // User agent of the browser/client
+  hash        String?   // Hash for tamper-evident audit trail
 
-  // Details of the person who performed the action which caused the audit log.
-  name      String?
-  email     String?
-  userId    Int?
-  userAgent String?
-  ipAddress String?
-
-  Document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  @@index([documentId])
+  @@index([userId])
+  @@index([recipientId])
 }
 
 enum DocumentDataType {
@@ -378,6 +385,8 @@ model DocumentData {
   initialData String
   document    Document?
   template    Template?
+
+  @@unique([data])
 }
 
 enum DocumentDistributionMethod {
@@ -449,6 +458,7 @@ model Recipient {
   template          Template?     @relation(fields: [templateId], references: [id], onDelete: Cascade)
   fields            Field[]
   signatures        Signature[]
+  verification      SignerVerification?
 
   @@unique([documentId, email])
   @@unique([templateId, email])
@@ -459,16 +469,14 @@ model Recipient {
 
 enum FieldType {
   SIGNATURE
-  FREE_SIGNATURE
-  INITIALS
-  NAME
-  EMAIL
   DATE
   TEXT
-  NUMBER
-  RADIO
+  EMAIL
+  NAME
+  COMPANY
+  TITLE
   CHECKBOX
-  DROPDOWN
+  INITIAL
 }
 
 /// @zod.import(["import { ZFieldMetaNotOptionalSchema } from '@documenso/lib/types/field-meta';"])
@@ -573,6 +581,7 @@ model Team {
   profile      TeamProfile?
   owner        User          @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   subscription Subscription?
+  dynamicForms DynamicForm[]
 
   documents Document[]
   templates Template[]
@@ -698,6 +707,7 @@ model Template {
   fields               Field[]
   directLink           TemplateDirectLink?
   documents            Document[]
+  industryTemplates    IndustryTemplate[]
 
   @@unique([templateDocumentDataId])
 }
@@ -779,4 +789,131 @@ model AvatarImage {
 
   team Team[]
   user User[]
+}
+
+model SignerVerification {
+  id                    Int      @id @default(autoincrement())
+  recipientId           Int      @unique
+  recipient             Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  smsVerificationEnabled Boolean  @default(false)
+  smsVerificationPhone  String?
+  idVerificationEnabled Boolean   @default(false)
+  idVerificationType    String?   // "passport", "driver_license", "national_id"
+  idVerificationStatus  String?   // "pending", "verified", "rejected"
+  biometricEnabled      Boolean   @default(false)
+  biometricType         String?   // "face", "fingerprint"
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now()) @updatedAt
+}
+
+enum FormFieldType {
+  TEXT
+  NUMBER
+  EMAIL
+  PHONE
+  DATE
+  CHECKBOX
+  SELECT
+  RADIO
+  FILE_UPLOAD
+}
+
+model DynamicForm {
+  id                Int           @id @default(autoincrement())
+  title             String
+  description       String?
+  userId            Int
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId            Int?
+  team              Team?         @relation(fields: [teamId], references: [id])
+  templateId        Int?
+  template          Template?     @relation(fields: [templateId], references: [id])
+  fields            FormField[]
+  submissions       FormSubmission[]
+  accessControl     String?       // JSON for access control rules
+  expiresAt         DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+  customDomain      String?
+  customSlug        String?
+  isPublished       Boolean       @default(false)
+  analyticsEnabled  Boolean       @default(true)
+  redirectUrl       String?
+
+  @@unique([customSlug, teamId])
+}
+
+model FormField {
+  id                Int           @id @default(autoincrement())
+  formId            Int
+  form              DynamicForm   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  type              FormFieldType
+  label             String
+  placeholder       String?
+  helpText          String?
+  isRequired        Boolean       @default(false)
+  defaultValue      String?
+  validationRules   String?       // JSON for validation rules
+  options           String?       // JSON array for select/radio options
+  order             Int           @default(0)
+
+  submissions       FormFieldSubmission[]
+}
+
+model FormSubmission {
+  id                Int           @id @default(autoincrement())
+  formId            Int
+  form              DynamicForm   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  documentId        Int?
+  document          Document?     @relation(fields: [documentId], references: [id])
+  submittedAt       DateTime      @default(now())
+  submitterEmail    String
+  submitterName     String?
+  submitterIp       String?
+  fieldSubmissions  FormFieldSubmission[]
+}
+
+model FormFieldSubmission {
+  id                Int           @id @default(autoincrement())
+  submissionId      Int
+  submission        FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  fieldId           Int
+  field             FormField     @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  value             String
+
+  @@unique([submissionId, fieldId])
+}
+
+model DocumentAnalysis {
+  id                Int           @id @default(autoincrement())
+  documentId        Int
+  document          Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type              String        // 'risk', 'summary', 'sentiment', 'extraction'
+  results           String        // JSON string of analysis results
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+
+  @@unique([documentId, type])
+  @@index([documentId])
+}
+
+model IndustryTemplate {
+  id                Int           @id @default(autoincrement())
+  name              String
+  description       String?
+  industry          String
+  subCategory       String?
+  tags              String?       // JSON array of tags
+  templateId        Int
+  template          Template      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  userId            Int
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPublished       Boolean       @default(false)
+  isFeatured        Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+
+  @@index([industry])
+  @@index([templateId])
+  @@index([userId])
 }
